@@ -1,0 +1,33 @@
+\providecommand{\bibfieldurl}[1]{}
+\providecommand{\bibfieldfile}[1]{}
+\providecommand{\bibfieldrfcurl}[1]{}
+\begin{thebibliography}{1}
+
+\bibitem{bruijn72lambda}
+N.~G. de~Bruijn.
+\newblock Lambda calculus notation with nameless dummies, a tool for automatic
+  formula manipulation, with application to the {Church-Rosser} theorem.
+\newblock In {\em Indagationes Mathematicae (Proceedings)}, volume~75, pages
+  381--392,
+  1972.\bibfieldurl{http://www.win.tue.nl/automath/archive/pdf/aut029.pdf}
+
+
+\bibitem{ocamlweb}
+Jean-Christophe Filliâtre and Claude Marché.
+\newblock ocamlweb: a literate programming tool for objective
+  caml.\bibfieldurl{http://www.lri.fr/~filliatr/ocamlweb/}
+
+
+\bibitem{ocaml}
+{INRIA}.
+\newblock The {Caml} language.\bibfieldurl{http://caml.inria.fr}
+
+
+\bibitem{sestoft02demonstrating}
+Peter Sestoft.
+\newblock Demonstrating lambda calculus reduction.
+\newblock In {\em The essence of computation: complexity, analysis,
+  transformation}, pages 420--435. Springer-Verlag New York, Inc., New York,
+  NY, USA, 2002.
+
+\end{thebibliography}
