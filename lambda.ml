@@ -5,9 +5,9 @@
 \usepackage{alltt}
 \usepackage{url}
 
-\title{Lambda Calculus Evaluator in Ocaml}
+\title{Lambda Calculus Evaluator in OCaml}
 \author{Christophe Deleuze}
-\date{11 April, 2008}
+\date{11 April, 2008, revised Jan 2022}
 \AtBeginDocument{\maketitle}
 
 *)
@@ -23,11 +23,11 @@ litterate program, using the ocamlweb \cite{ocamlweb} tool.
 (*s Lambda terms *)
 
 (* Here is the type of lambda terms.  We use the ``classical'' form
-  with variable names, so we will have to perform alpha conversion
-  sometimes.  An alternative would be to use De Bruijn's nameless
-  dummies \cite{bruijn72lambda}.  [Hole] and [Here] are not part of
-  lambda terms proper but will be useful in contexts for tracing
-  reductions. *)
+   with variable names, so we will have to perform alpha conversion
+   sometimes.  An alternative would be to use De Bruijn's nameless
+   dummies \cite{bruijn72lambda}.  [Hole] and [Here] are not part of
+   lambda terms proper but will allow to define contexts (used when
+   tracing reductions). *)
 
 type term =
     Var of string | Abs of string * term | App of term * term
@@ -36,12 +36,12 @@ type term =
 
 (*s Alpha-conversion *)
 
-(* To perform alpha conversion, we first have to find what are the
-  free variables in a term [t].  These are all variables appearing in
+(* To perform alpha conversion, we'll need to know what are the
+  free variables in a term [t].  These are variables appearing in
   [t] except for occurences appearing under a lambda binding them.  We
   simply concat lists of variables appearing in subterms, filtering
   out the bound variable at each [Abs] node.  We don't mind that
-  variables appear multiple times in our list.  *)
+  variables may appear multiple times in our list.  *)
 
 let rec fv t =
   match t with
@@ -82,7 +82,7 @@ let rec ssubst body s arg =
 
 (* Now, the real beta reduction, first performing alpha conversion to
    avoid variable captures.  [gen_nb] provides the unique number for
-   the suffix we mentionned above ; [init_nb] resets the generator.
+   the suffix we mentionned above; [init_nb] resets the generator.
    What kind of variables can be captured?  These are free variables
    in [arg] that are bound in [body].  So we rename in [body] bound
    variables that appear free in [arg]. %ZZZ autre ? *)
@@ -92,7 +92,7 @@ let gen_nb, init_nb =
 ;;
 
 let beta (App(Abs(s,body), arg)) =
-  let nb = "-" ^ string_of_int (gen_nb()) in
+  let nb = "~" ^ string_of_int (gen_nb()) in
   ssubst (alpha (fv arg) nb body) s arg
 
 
@@ -177,12 +177,11 @@ let rec string_of_term t =
   sot Root t
 ;;
 
-(*s Managing the environment *)
+(*s Environment *)
 
-(*
-
-  The environment is a set of named terms.  We implement the
-  environment as a global hash table binding strings to [term]s.  *)
+(* For convenience we want to be able to refer to a set of named
+   terms, which we'll call the environment.  We implement it as a
+   global hash table binding strings to [term]s.  *)
 
 let env = Hashtbl.create 30;;
 
@@ -199,140 +198,124 @@ let set_env n t =
 (*s Parsing lambda terms: lexical *)
 
 (* For parsing, printing, and user convenience, names refering to the
-  environment are introduced by the underscore character like in
-  \verb+/x._fact x+.  Such a name is ended by any non letter
-  character.  An alternative would be to force separation of single
-  character variable names, as in \verb+/f x.f x+ but this would make
-  terms much longer so we prefer the underscore trick.  All letters
-  non following an underscore each stand for a variable name.  *)
+   environment are introduced by the underscore character like in
+   \verb+/x._fact x+ and end-delimited by any non letter character.
+   We prefer this to using spaces so that we can still use sequences
+   of (single characters) variable names without interleaved spaces
+   (as in \verb+/fx.f(fx)+). *)
 
 
-(* We start with the lexical analyzer.  It'll get a string, turn this
-into a character stream and build a token stream out of it.  Here's
-the set of lexical tokens. *)
+(* We start with the lexical analyzer.  It'll get a string and produce
+a stream of lexical [token]s. *)
 
 type token =  CHAR of char | LPAR | RPAR | DOT | LAMBDA | STRING of string
+              | END
 
-(* [soc] is short for [string_of_char].  [implode] turns a list of
-characters into a string made of these characters in the reverse
-order.  This will be used to build [STRING] tokens. *)
+
+(* For example, from \verb+/x._fact x+ we'll get [LAMDBA], [CHAR 'x'],
+   [DOT], [STRING "fact"], [CHAR 'x'].
+
+
+   [soc] is short for [string_of_char].  [implode] turns a list of
+   characters into a string made of these characters in the reverse
+   order.  This will be used to build [STRING] tokens. *)
 
 let soc = Printf.sprintf "%c"
 
-let implode l =
-  let rec imp l acc =
-    match l with 
-    | [] -> acc
-    | h::t -> imp t ((soc h)^acc)
-  in
-  imp l ""
-;;
+let implode l = let rec imp l acc = match l with | [] -> acc | h::t ->
+   imp t ((soc h)^acc) in imp l "" ;;
 
 (* [get_name] reads characters from the character stream and
-cons-accumulates them until a non letter character is found.  It
-returns the string of the accumulated characters in the initial order
-by calling [implode].  *)
+   cons-accumulates them until a non letter character is found.  It
+   returns the string of the accumulated characters in the initial
+   order by calling [implode].  *)
 
-let get_name s =
-  let rec loop acc =
-    let n = Stream.peek s in
-    if n = None then acc
-    else
-      let c = match n with Some c -> c in
-      match c with
-      | '_' | '/' | '(' | ')' | '.' | ' ' -> acc
-      | _ -> Stream.next s; loop (c::acc)
-  in
-  implode (loop [])
-;;
+let get_name s = let rec loop acc = let n = Stream.peek s in if n =
+   None then acc else let c = match n with Some c -> c in match c with
+   | '_' | '/' | '(' | ')' | '.' | ' ' -> acc | _ -> Stream.next s;
+   loop (c::acc) in implode (loop []) ;;
 
 (* The lexer function takes a string and returns a token stream.  It
-first turns the string into a character stream, then consumes them
-producing tokens.  When an underscore character is found, all
-following letters are accumulated by [get_name] to form a [STRING]
-token.  Blanks are simply skipped.  All other characters directly map
-to a token. *)
+   first turns the string into a character stream, then consumes them
+   producing tokens.  When an underscore character is found, all
+   following letters are accumulated by [get_name] to form a [STRING]
+   token.  Blanks are simply skipped.  All other characters directly
+   map to a token.  The [END] token is produced when string end is
+   reached. *)
 
-let lexer s =
-  let s = Stream.of_string s
-  in
-  let rec next _ =
-    let n = Stream.peek s in
-    if n = None then None else
-    match Stream.next s with
-    | '_' -> Some(STRING (get_name s))
-    | '/' -> Some LAMBDA
-    | '(' -> Some LPAR
-    | ')' -> Some RPAR
-    | '.' -> Some DOT
-    | ' ' -> next 0
-    | c   -> Some (CHAR c)
-  in
-  Stream.from next
-;;
+let lexer s = let s = Stream.of_string s in let rec next _ = let n =
+   Stream.peek s in if n = None then Some END else match Stream.next s
+   with | '_' -> Some(STRING (get_name s)) | '/' -> Some LAMBDA | '('
+   -> Some LPAR | ')' -> Some RPAR | '.' -> Some DOT | ' ' -> next 0 |
+   c -> Some (CHAR c) in Stream.from next ;;
 
 (*s Parsing lambda terms: syntax *)
 
 (* We now turn to the parsing proper.  Our LL(1) grammar for lambda
-terms is (term being the axiom):
+   terms is:
 
 \newcommand{\fl}{\ensuremath{\rightarrow}}
 
 \bigskip
-\begin{tabular}{lll}
-term & \fl &elt rest $\vert$ lamb \\
-rest & \fl &elt rest $\vert$ $\varepsilon$ \\
-elt &  \fl & [(CHAR c)] $\vert$ [LPAR] term [RPAR] \\
-lamb & \fl & [LAMBDA] [(CHAR c)] lamb2 \\
-lamb2 & \fl & [DOT] term $\vert$ [(CHAR c)] lamb2
-\end{tabular}
-\bigskip
 
-The lamb2 rule allows compact notation for succession of lambdas:
-   
-   \texttt{/fnx.x} would be parsed this way
+\begin{tabular}{lll} full & \fl & term [END] \\ term & \fl & elt elts
+   $\vert$ lamb \\ elts & \fl & elt elts $\vert$ $\varepsilon$ \\ elt
+   & \fl & [(CHAR c)] $\vert$ [LPAR] term [RPAR] $\vert$ [(STRING s)]
+   \\ lamb & \fl & [LAMBDA] [(CHAR c)] lamb2 \\ lamb2 & \fl & [DOT]
+   term $\vert$ [(CHAR c)] lamb2 \end{tabular} \bigskip
 
-\begin{alltt}
-   term -> lamb -> / f lamb2 -> / f n lamb2 -> / f n x lamb2
-   -> / f n x . term -> / f n x . elt rest -> / f n x . x \(\varepsilon\)
-\end{alltt}
+full is to ensure we parse the term from the full entry and not just a
+   prefix thereof. Each non atomic element (ie not a single char
+   variable or underscore-started name) must be enclosed in
+   parenthesis, except for a top-level lambda.  We want application to
+   be left associative.  The lamb2 rule allows compact notation for a
+   sequence of lambdas, so that eg \texttt{/fnx.x} will be parsed this
+   way:
 
-*)
+\medskip term \fl{} lamb \fl{} \texttt{/f} lamb2 \fl{} \texttt{/fn}
+   lamb2 \fl{} \texttt{/fnx} lamb2 \\ \indent \fl{} \texttt{/fnx.}term
+   \fl{} \texttt{/fnx.}elt elts \fl{} \texttt{/fnx.x} elts \fl{}
+   \texttt{/fnx.x} \(\varepsilon\) \medskip *)
 
 
-(* We will build our top-down parser using Caml streams, so we first
-need to load in stream syntax.  *)
+(* We build our top-down parser using Caml streams, so we'll need
+   camlp4 to use stream syntax.  This is taken care of in the
+   Makefile; in an interactive session we could use: *)
 
-#use "topfind";;
-#camlp4o;;
+(* \begin{alltt}
+  #topfind;;
+  #camlp4o;;
+\end{alltt} *)
 
 (* Caml built-in parsers exactly mimic the grammar.  Top-down parsers
-``naturally'' making operators right-associative, note how [App] is
-parsed as left-associative by using an accumulator in [rest] (tree for
-successive applications is built left-to-right, bottom-up)\footnote{Of
-course this is only possible because it's a degenerated tree.} *)
+   ``naturally'' making operators right-associative (by not allowing
+   left recursion in the grammar rules), note how [App] is parsed as
+   left-associative by using an accumulator in [elts] (tree for
+   successive applications is built left-to-right,
+   bottom-up)\footnote{Of course this is only possible because it's a
+   degenerated tree.} *)
 
-let rec term = parser
-  | [< e=elt; t=rest e >] -> t
-  | [< l=lamb >] -> l
-and rest e1 = parser
-  | [< e2=elt; e=rest(App(e1,e2)) >] -> e
-  | [< >] -> e1
+let rec full = parser
+ | [< t=term; 'END >] -> t
+and term = parser
+ | [< e=elt; t=elts e >] -> t
+ | [< l=lamb >] -> l
+and elts e1 = parser
+ | [< e2=elt; e=elts (App(e1,e2)) >] -> e
+ | [< >] -> e1
 and elt = parser
-  | [< 'CHAR c >] -> Var (soc c)
-  | [< 'LPAR; t=term; 'RPAR >]  -> t
-  | [< 'STRING s >] -> get_env s
+ | [< 'CHAR c >] -> Var (soc c)
+ | [< 'LPAR; t=term; 'RPAR >] -> t
+ | [< 'STRING s >] -> get_env s
 and lamb = parser
-  | [< 'LAMBDA; 'CHAR c; s=lamb2 >] -> Abs(soc c,s)
+ | [< 'LAMBDA; 'CHAR c; s=lamb2 >] -> Abs(soc c,s)
 and lamb2 = parser
-  | [< 'DOT; t=term >] -> t
-  | [< 'CHAR c; s=lamb2 >] -> Abs(soc c,s)
+ | [< 'DOT; t=term >] -> t
+ | [< 'CHAR c; s=lamb2 >] -> Abs(soc c,s)
 
 (* Here is the final function for turning a string into a term. *)
 
-let term_of_string s = term (lexer s)
-
-
+let term_of_string s = full (lexer s)
 
 
 (*s Tracing reductions *)
@@ -341,26 +324,28 @@ let term_of_string s = term (lexer s)
 
 \begin{itemize}
 
-\item the beta reduction function will have to print the term before
-and after reduction,
+\item the beta reduction function will have to print the whole term
+   before and after reduction,
 
 \item the printed term should show somehow the current redex,
 
-\item the recursive functions [cbn] and [nor] will have to maintain
-the context of the current term and pass it to the beta reduction
-function for it to print the whole term.
+\item this means the beta function should receive the redex to reduce
+   \emph{along with its context} in order to print the whole term; and
+   the evaluations function ([cbn] or [nor]) will have to maintain the
+   context of the current recursively explored term.
 
 \end{itemize}
 
-A context is a lambda term with a single [Hole].  A subterm in context
-is a term appearing under a [Here] node in its context term.  See
-[string_of_term] above to see the string representation.
+A context is a lambda term with a single [Hole] (a placeholder for the
+   term whose context it is).  A subterm in context is a term
+   appearing under a [Here] node in its context term.  See code of
+   [string_of_term] above to see the string representation.
 
 *)
 
-(* [put_in_hole] puts expression [e] in hole of context [c].  This can
-   be used to extend a context by setting [e] as a sub-context of [c]
-*)
+(* [put_in_hole] puts expression [e] in hole of context [c].  If [e]
+   is a term proper, the result is a term proper.  If [e] is a
+   context, the result is a new (extended) context.  *)
 
 let put_in_hole c e =
   let rec pih c =
@@ -376,22 +361,21 @@ let put_in_hole c e =
   pih c
 
 (* We have to maintain the context during recursive evaluation, but
-using [put_in_hole] at each step will be very costly.  Instead, we
-will accumulate a list of context steps, and build the corresponding
-context only when we need it. %ZZZ
+   using [put_in_hole] at each step would be very costly.  Instead, we
+   will accumulate a list of context steps, and build the
+   corresponding context only when we need it.
 
 [buildc] builds the context from a list of context steps.  This is
-done by putting the last step in the hole of previous one, putting the
-obtained term in hole of previous context step etc.  *)
+   done by putting the last step in the hole of previous one, putting
+   the obtained term in hole of previous context step etc.  *)
 
 let buildc c =
   let rec soc acc c =
     match c with
-    | [] -> acc 
+    | [] -> acc
     | h::t -> soc (put_in_hole acc h) t
   in
   soc Hole (List.rev c)
-
 
 (* Now, given a list of context steps [c] and an expression [e], we
    build the term showing [e] in its context.  That is, we insert [e]
@@ -401,74 +385,73 @@ let buildc c =
 let put_in_context c e =
   match c with
   | h::t -> buildc ((put_in_hole h (Here e))::t)
-  | _ ->  Here e
+  | _ -> Here e
 
 (* This one just puts [e] at its place in [c], without adding a [Here]
-node. %ZZZ peut être traité à l'impression *)
+   node. %TODO peut être traité à l'impression *)
 
-let put_in_context2 c e =
+let plug_in_context c e =
   match c with
   | h::t -> buildc ((put_in_hole h e)::t)
-  | _ ->  e
+  | _ -> e
 
 
-(* Evaluation functions will take as argument a function [beta] that will
-   perform the beta reduction on the given sub-term.  It will receive
-   as first argument a list of context steps for a possible
-   side-effect. *)
+(* Evaluation functions will take as argument a function [beta] that
+   will perform the beta reduction on the given sub-term.  It will
+   receive as first argument a list of context steps that it can use
+   as a possible side-effect. *)
 
 (* Here, [tsub] prints the term in context before reduction, performs
    reduction, prints the reduced term in context, prints the whole
    reduced term with context marks and returns the reduced term.
    [tsubf] prints only the resulting reduced term.  *)
 
-let tsub ctxt t = 
-  print_string (">   " ^ (string_of_term (put_in_context ctxt t)) ^ "\n");
-  let t' = beta t
-  in
-  print_string ("<   " ^ (string_of_term (put_in_context ctxt t')) ^ "\n");
-  print_string ("=   " ^ (string_of_term (put_in_context2 ctxt t')) ^ "\n");
+let tsub ctxt t =
+  print_string ("> " ^ (string_of_term (put_in_context ctxt t)) ^ "\n");
+  let t' = beta t in
+  print_string ("< " ^ (string_of_term (put_in_context ctxt t')) ^ "\n");
+  print_string ("= " ^ (string_of_term (plug_in_context ctxt t')) ^ "\n");
   t'
 
-let tsubf ctxt t = 
-  let t' = beta t
-  in
-  print_string ("=   " ^ (string_of_term (put_in_context2 ctxt t')) ^ "\n");
+let tsubf ctxt t =
+  let t' = beta t in
+  print_string ("= " ^ (string_of_term (plug_in_context ctxt t')) ^ "\n");
   t'
 
-(* [tsub2] does the same thing, waiting for the return key to be
-   pressed between each step. *)
+(* [tsub2] does the same thing as [tsub] but waits for the return key
+   to be pressed between each step. *)
 
 let key () = flush stdout; input_char stdin;;
 
-let tsub2 ctxt t = 
-  print_string (">   " ^ (string_of_term (put_in_context ctxt t)) ^ "\n"); 
+let tsub2 ctxt t =
+  print_string ("> " ^ (string_of_term (put_in_context ctxt t)) ^ "\n");
   key();
-  let t' = beta t
-  in
-  print_string ("<   " ^ (string_of_term (put_in_context ctxt t')) ^ "\n");
+  let t' = beta t in
+  print_string ("< " ^ (string_of_term (put_in_context ctxt t')) ^ "\n");
   key();
-  print_string ("=   " ^ (string_of_term (put_in_context2 ctxt t')) ^ "\n");
+  print_string ("= " ^ (string_of_term (plug_in_context ctxt t')) ^ "\n");
   key();
   t'
 
 (*s New evaluation functions *)
 
 (* We rewrite our evaluation functions so that they maintain context
-steps and take the beta reduction function as a parameter.  Here's
-call by name (we need to pass a context steps arg because [cbn] can be
-called from [nor] below): *)
+   steps, take the beta reduction function as a parameter and provide
+   it the context as well as the redex.  Here's call by name (we need
+   to pass a context steps arg [ctxt] because [cbn] can be called from
+   [nor] below): *)
 
 let cbn beta ctxt t =
   let rec cbn ctxt t =
     match t with
     | Var _ -> t
     | Abs _ -> t
-    | App(e1,e2) -> let e1' = cbn (App(Hole,e2)::ctxt) e1 in
-      match e1' with
+    | App(e1,e2) ->
+       let e1' = cbn (App(Hole,e2)::ctxt) e1 in
+       match e1' with
 (*i ERR Abs _ -> cbn (App(e1',Hole)::ctxt) (beta ctxt (App(e1', e2))) i*)
-	Abs _ -> cbn ctxt (beta ctxt (App(e1', e2)))
-      | _ -> App(e1', e2)
+         Abs _ -> cbn ctxt (beta ctxt (App(e1', e2)))
+       | _ -> App(e1', e2)
   in
   cbn ctxt t
 ;;
@@ -480,44 +463,39 @@ let nor beta t =
     match t with
     | Var _ -> t
     | Abs(x,e) -> Abs(x, nor (Abs(x,Hole)::ctxt) e)
-    | App(e1,e2) -> let e1' = cbn beta (App(Hole,e2)::ctxt) e1 in
-      match e1' with 
-	Abs _ -> nor ctxt (beta ctxt (App(e1', e2)))
-      | _ -> let e1'' = nor (App(Hole,e2)::ctxt) e1' in
-	App(e1'', nor (App(e1'',Hole)::ctxt) e2)
+    | App(e1,e2) ->
+       let e1' = cbn beta (App(Hole,e2)::ctxt) e1 in
+       match e1' with
+         Abs _ -> nor ctxt (beta ctxt (App(e1', e2)))
+       | _ -> let e1'' = nor (App(Hole,e2)::ctxt) e1'
+              in App(e1'', nor (App(e1'',Hole)::ctxt) e2)
   in
-  nor [] t
-;;
+  nor [] t ;;
 
 (* Traced and stepped normal order evaluation.  We reset the number
-generator at each use: *)
+   generator at each use: *)
 
-let trace s = init_nb(); nor tsubf (term_of_string s)
-;;
+let trace s = init_nb(); nor tsubf (term_of_string s) ;;
 
 let step s = init_nb(); nor tsub2 (term_of_string s);;
 
 (* Non traced normal order evaluation.  This one does not use the
-context steps that are being accumulated. *)
+   context steps that are being accumulated. *)
 
-let nnor s = init_nb(); nor (fun c t -> beta t) (term_of_string s)
-;;
+let nnor s = init_nb(); nor (fun c t -> beta t) (term_of_string s) ;;
 
 
 (*s Basic constructs *)
 
 (* To be able to play with the system, we define some useful basic
-constructs. *)
+   constructs. *)
 
-let add_env n s =
-  let t = term_of_string s in
-  set_env n t
-;;
+let add_env n s = set_env n (term_of_string s) ;;
 
 add_env "succ" "/nfx.f(nfx)";
 add_env "pred" "/nfx.n(/gh.h(gf))(/u.x)(/u.u)";
 add_env "mult" "/nm./fx.n(mf)x";
-add_env "exp"  "/mn.nm";
+add_env "exp" "/mn.nm";
 add_env "zero" "/fx.x";
 add_env "true" "/xy.x";
 add_env "false" "/xy.y";
@@ -527,263 +505,114 @@ add_env "Y" "/g.(/x.g(xx))(/x.g(xx))";
 (* We have all we need to define the factorial function. *)
 
 add_env "ofact" "/fn.(_iszero n)(_succ _zero)(_mult n(f(_pred n)))";
-add_env "fact"  "_ofact(_Y _ofact)";;
+add_env "fact" "_ofact(_Y _ofact)";;
 
 (*i(* another fixpoint combinator *)
 
-add_env "Z" "/f.(/x. f(/y.xxy)) (/x. f(/y.xxy))"
-;;
-i*)
+add_env "Z" "/f.(/x. f(/y.xxy)) (/x. f(/y.xxy))" ;; i*)
 
-(*s Trying it out *)
+(*s Using it *)
 
-(* We're done.  Just call [trace] with a string encoding your term and
-watch its evaluation proceed.  Here are a few examples:
+(* We're mostly done.  We now need a simple shell to play with lambda
+   terms.  Here's first the definition of a few commands to alter the
+   environment and select the evaluation function: *)
+
+let cont = ref true let eval = ref trace
+
+let command (cmd::args) =
+  match cmd,args with
+    ":env", [] -> Hashtbl.iter (fun k v -> Printf.printf "%s = %s\n" k (string_of_term v)) env
+  | ":quit",[] -> cont := false
+  | ":add",[n;v]-> add_env n v
+  | ":trace",[] -> eval := trace
+  | ":step",[] -> eval := step
+  | ":nnor",[] -> eval := nnor
+  | ":show",l -> print_endline (string_of_term (term_of_string (String.concat " " l)))
+  | __ -> print_endline "unknown command"
+
+(* And finally a simple interactive loop that reads a line, executes
+   it if it's a command and otherwise evaluates it as a lambda term
+   and prints the result. *)
+
+let rec loop () =
+  print_string "/> ";
+  try
+    let l = read_line () in
+    if l="" then () else
+      begin
+        if l.[0] = ':' then command (String.split_on_char ' ' l) else
+        if l.[0] = ';' then loop() else
+          let r = string_of_term (!eval l) in
+          print_endline r
+      end;
+    if !cont then loop()
+  with _ -> print_endline "Syntax error"; loop() ;;
+
+loop()
+
+(* Let's try a few examples (default evaluation function is [trace]):
 
 \begin{alltt}
-# trace "_succ (/fx.f(fx))";;
-=   /fx.f((/fx.f(fx))fx)
-=   /fx.f((/x.f(fx))x)
-=   /fx.f(f(fx))
-- : term =
-Abs ("f", Abs ("x", App (Var "f", App (Var "f", App (Var "f", Var "x")))))
-# trace "_pred (/fx.fx)";;
-=   /fx.(/fx.fx)(/gh.h(gf))(/u.x)(/u.u)
-=   /fx.(/x.(/gh.h(gf))x)(/u.x)(/u.u)
-=   /fx.(/gh.h(gf))(/u.x)(/u.u)
-=   /fx.(/h.h((/u.x)f))(/u.u)
-=   /fx.(/u.u)((/u.x)f)
-=   /fx.(/u.x)f
-=   /fx.x
-- : term = Abs ("f", Abs ("x", Var "x"))
-# trace "_fact (/fx.fx)";;
-=   (/n.(/n.n(/xxy.y)(/xy.x))n((/nfx.f(nfx))( ...
+/> _succ /nfx.f(nfx)
+Syntax error
+/> _succ (/fx.f(fx))
+= /fx.f((/fx.f(fx))fx)
+= /fx.f((/x.f(fx))x)
+= /fx.f(f(fx))
+/fx.f(f(fx))
+\end{alltt}
+
+Let's multiply two by three...
+
+\begin{alltt}
+/> :add two /fx.f(fx)
+/> :show _mult _two (_succ _two)
+(/nmfx.n(mf)x)(/fx.f(fx))((/nfx.f(nfx))(/fx.f(fx)))
+/> ; all right, compute that!
+/> _mult _two (_succ _two)
+= (/mfx.(/fx.f(fx))(mf)x)((/nfx.f(nfx))(/fx.f(fx)))
+= /fx.(/fx.f(fx))((/nfx.f(nfx))(/fx.f(fx))f)x
+= /fx.(/x.(/nfx.f(nfx))(/fx.f(fx))f((/nfx.f(nfx))(/fx.f(fx))fx))x
+= /fx.(/nfx~4.f(nfx~4))(/fx~4.f(fx~4))f((/nfx~4.f(nfx~4))(/fx~4.f(fx~4))fx)
+= /fx.(/fx~4.f((/fx~4.f(fx~4))fx~4))f((/nfx~4.f(nfx~4))(/fx~4.f(fx~4))fx)
+= /fx.(/x~4.f((/f~6x~4.f~6(f~6x~4))fx~4))((/nfx~4.f(nfx~4))(/fx~4.f(fx~4))fx)
+= /fx.f((/f~6x~4.f~6(f~6x~4))f((/nfx~4.f(nfx~4))(/fx~4.f(fx~4))fx))
+= /fx.f((/x~4.f(fx~4))((/nfx~4.f(nfx~4))(/fx~4.f(fx~4))fx))
+= /fx.f(f(f((/nfx~4.f(nfx~4))(/fx~4.f(fx~4))fx)))
+= /fx.f(f(f((/fx~4.f((/fx~4.f(fx~4))fx~4))fx)))
+= /fx.f(f(f((/x~4.f((/f~11x~4.f~11(f~11x~4))fx~4))x)))
+= /fx.f(f(f(f((/f~11x~4.f~11(f~11x~4))fx))))
+= /fx.f(f(f(f((/x~4.f(fx~4))x))))
+= /fx.f(f(f(f(f(fx)))))
+/fx.f(f(f(f(f(fx)))))
+\end{alltt}
+
+... which is six!  What about the factorial function?
+
+\begin{alltt}
+/> _fact (/fx.fx)
+= (/n.(/n.n(/xxy.y)(/xy.x))n((...
 ...
-=   /fx.(/fx25.f((/fx25.x25)fx25))fx
-=   /fx.(/x25.f((/f43x25.x25)fx25))x
-=   /fx.f((/f43x25.x25)fx)
-=   /fx.f((/x25.x25)x)
-=   /fx.fx
-- : term = Abs ("f", Abs ("x", App (Var "f", Var "x")))
-# trace "_fact (/fx.f(f(fx)))";;
-=   (/n.(/n.n(/xxy.y)(/xy.x))n((/nfx.f(nfx))(/fx.x))...
-... about 675 steps skipped
-=   /fx.f(f(f(f(f(fx)))))
-- : term =
-Abs ("f",
- Abs ("x",
-  App (Var "f",
-   App (Var "f",
-    App (Var "f", App (Var "f", App (Var "f", App (Var "f", Var "x"))))))))
+= /fx.(/x~12.f((/f~30x~12.x~12)fx~12))x
+= /fx.f((/f~30x~12.x~12)fx)
+= /fx.f((/x~12.x~12)x)
+= /fx.fx
+/fx.fx
+
+/> _fact (/fx.f(f(fx)))
+= (/n.(/n.n(/xxy.y)(/xy.x))n((/nfx.f(nfx))(/fx.x))((...
+... 673 steps skipped
+= /fx.f(f(f(f(f(fx)))))
+/fx.f(f(f(f(f(fx)))))
 \end{alltt}
 
 Good, fact 3 is indeed 6!
+
 *)
 
 (*
 \bibliography{biblio2}
 \bibliographystyle{plain}
-
 \end{document}
 *)
 
-(*s CPS *)
-
-let new_var =
-  let nb = ref 0 in
-  fun () -> incr nb; "z~" ^ (string_of_int !nb)
-
-let rec cps t =
-  match t with
-  | Var x -> Abs("k", App(Var "k", Var x))
-  | Abs(x,t) -> Abs("k", App(Var "k",(Abs(x, cps t))))
-  | App(a,b) -> 
-      Abs("k", App(cps a,
-		   Abs("a", (App(cps b,
-				  Abs("b", App(App(Var "a", Var "b"),
-						Var "k")))))))
-let rec rcps t =
-  match t with
-  | Abs(k,App(Var k1, Var x)) when k=k1 -> Var x
-  | Abs(k,App(Var k1, Abs(k',App(Var k1', (Abs(x,ca))))))
-    when k=k1 && k'=k1' -> Abs(x,rcps ca)
-  | Abs(k,App(ca, Abs(va,App(cb,
-			     Abs(vb,App(App(Var va1, Var vb1), Var k1)))))) 
-    when k=k1 && va=va1 && vb=vb1 ->
-      App(rcps ca, rcps cb)
-  | any -> any
-
-(*s Drawing terms as trees *)
-
-(* It would also be nice to draw lambda terms as trees.  For this, we
-will use the tree module \cite{tree}. *)
-
-open Tree;;
-
-(*  Here's a function to turn a
-lambda term into a tree as defined in the tree module.  *)
-
-let rec tree_of_term l = 
-  match l with
-    Var s      -> Leaf s
-  | Abs(s,l1)  -> Node("/" ^ s, [tree_of_term l1])
-  | App(l1,l2) -> Node("·", [tree_of_term l1] @ [tree_of_term l2])
-  | Hole       -> Leaf "<>"
-  | Here(l1)   -> Node("< >", [tree_of_term l1])
-
-
-(* The reduction function with graphic tracing.  Show current redex in
-context before and after reduction, then the whole reduced term.
-[gstep] is the evaluation fonction with graphic stepping.  *)
-
-let gsub ctxt t = 
-  clear_graph();
-  to_sc (pict_of_tree (tree_of_term (put_in_context ctxt t)) A2local 0.) 10 50;
-  read_key();
-  let t' = beta t
-  in
-  clear_graph();
-  to_sc (pict_of_tree (tree_of_term (put_in_context ctxt t')) A2local 0.) 10 50; 
-  read_key();
-  clear_graph();
-  to_sc (pict_of_tree (tree_of_term (put_in_context2 ctxt t')) A2local 0.) 10 50;
-  read_key();
-  t'
-
-let gstep s = init_nb(); open_graph ""; nor gsub (term_of_string s);;
-
-
-
-(*s TODO
-
-autre présentation :
-
-context du ss-terme à réduire, ss-terme réduit, nouveau terme.
-
-expliquer les context steps
-
-représentation graphique : encadrer le redex, ou utiliser couleur, ne pas déplacer l'arbre (délicat ?)
-
-possibilité de revenir en arrière
-
-+ macros à l'évaluation
-
-parsing des termes affichés xx19 -> App(Var"x", Var"x19")
-
-possibilité réécriture en forme normale ?  /xx19.xx19 -> /fx.fx
-
-evaluation / reduction ?
-
-expliquer qu'une réalisation à la De Bruijn serait plus efficace mais
-pas adpatée à un outil de démo/trace ?
-
-*)
-
-
-
-(*i
-(* The set of lexical tokens. ZZZ Not really... SPACE...*)
-
-type token =  CHAR of char | LPAR | RPAR | DOT | LAMBDA | STRING of string
-            | SPACE | END
-
-(* The lexer *)
-
-let token_of_char = function
-  | '/' -> LAMBDA
-  | '(' -> LPAR
-  | ')' -> RPAR
-  | '.' -> DOT
-  | ' ' -> SPACE
-  | c   -> CHAR c
-
-let soc = Printf.sprintf "%c"
-
-
-let implode l =
-  let rec imp l acc =
-    match l with 
-    | [] -> acc
-    | h::t -> imp t ((soc h)^acc)
-  in
-  imp l ""
-;;
-
-let get_name s =
-  let rec loop acc =
-    let n = Stream.peek s in
-    if n = None then acc
-    else
-      let c = match n with Some c -> c in
-      match c with
-      | '_' | '/' | '(' | ')' | '.' | ' ' -> acc
-      | _ -> Stream.next s; loop (c::acc)
-  in
-  implode (loop [])
-
-;;
-let lexer s =
-  let s = Stream.of_string s
-  in
-  let next _ =
-    let n = Stream.peek s in
-    if n = None then None else
-    Some (match Stream.next s with
-    | '_' -> STRING (get_name s)
-    | '/' -> LAMBDA
-    | '(' -> LPAR
-    | ')' -> RPAR
-    | '.' -> DOT
-    | ' ' -> SPACE
-    | c   -> CHAR c)
-  in Stream.from next
-;;
-
-
-(* turn string into list of characters *)
-
-let explode s =
-  let rec exh acc = function
-    | -1 -> acc
-    | i  -> exh (s.[i]::acc) (pred i)
-  in exh [ ] (pred (String.length s))
-
-(* ZZZ ? *)
-
-let implode l =
-  let rec imp (h::t) acc =
-    if h = '_' then acc
-    else imp t ((soc h)^acc)
-  in
-  imp l ""
-;;
-
-(* Input string if first exploded into a list of characters, mapped to
-a list of pseudo-tokens with a terminating END token.  
-
-The only subtle point is the need to implode sets of CHARs whose first
-is an underscore into a single STRING token.  This is what the fold is
-doing, returning the true list of tokens, which is then turned into a
-stream to be eaten by the parser.
-
-  *)
-
-let lexer s =
-  let tl,_ =
-    List.fold_left 
-      (fun (toks,string) tok -> 
-	match string,tok with
-	  [], CHAR '_' -> toks,      ['_']
-	| [], SPACE    -> toks,      []
-	| [], END      -> toks,      []
-	| [], tok      -> tok::toks, []
-	| _,  CHAR c   -> toks,      c::string
-	| _,  END      -> (STRING (implode string))::toks, []
-	| _,  SPACE    -> (STRING (implode string))::toks, []
-	| _,  tok      -> tok::(STRING (implode string))::toks, []
-      )
-      ([],[ ])
-      ((List.map token_of_char (explode s)) @ [ END ])
-  in Stream.of_list (List.rev tl)
-;;
-i*)

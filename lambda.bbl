@@ -15,12 +15,12 @@ N.~G. de~Bruijn.
 \bibitem{ocamlweb}
 Jean-Christophe Filliâtre and Claude Marché.
 \newblock ocamlweb: a literate programming tool for objective
-  caml.\bibfieldurl{http://www.lri.fr/~filliatr/ocamlweb/}
+  caml.\bibfieldurl{https://www.lri.fr/~filliatr/ocamlweb/}
 
 
 \bibitem{ocaml}
 {INRIA}.
-\newblock The {Caml} language.\bibfieldurl{http://caml.inria.fr}
+\newblock OCaml.\bibfieldurl{https://ocaml.org}
 
 
 \bibitem{sestoft02demonstrating}
