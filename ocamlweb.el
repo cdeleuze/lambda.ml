@@ -1,3 +1,4 @@
+(require 'mmm-mode)
 
 (setq mmm-submode-decoration-level 0)
 
@@ -8,3 +9,6 @@
     :front "(\\*[psi]?\n?"  ;; peut être pas les (*i  i*) ?
     :back "i?\\*)")
    ))
+
+(mmm-mode)
+(mmm-ify-by-class 'ocamlweb)

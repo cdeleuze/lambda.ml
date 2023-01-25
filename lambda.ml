@@ -17,7 +17,7 @@
 (*
 This document is a lambda calculus evaluator with tracing
 facilities, coded in Objective Caml \cite{ocaml}.  It is written as a
-litterate program, using the ocamlweb \cite{ocamlweb} tool.
+literate program, using the ocamlweb \cite{ocamlweb} tool.
 *)
 
 (*s Lambda terms *)
@@ -83,9 +83,9 @@ let rec ssubst body s arg =
 (* Now, the real beta reduction, first performing alpha conversion to
    avoid variable captures.  [gen_nb] provides the unique number for
    the suffix we mentionned above; [init_nb] resets the generator.
-   What kind of variables can be captured?  These are free variables
-   in [arg] that are bound in [body].  So we rename in [body] bound
-   variables that appear free in [arg]. %ZZZ autre ? *)
+   What variables can be captured?  These are free variables in [arg]
+   that are bound in [body].  So we rename in [body] bound variables
+   that appear free in [arg]. *)
 
 let gen_nb, init_nb = 
   let nb = ref 0 in (fun () -> incr nb; !nb), (fun () -> nb := 0)
@@ -109,10 +109,9 @@ let rec cbn t =
     match e1' with
     | Abs _ -> cbn (beta (App(e1', e2)))
     | _      -> App(e1', e2)
-;;
 
 (* Normal order evaluation can be built on top of call by name, as is
-shown in \cite{sestoft02demonstrating}.  %ZZZ explications ? *)
+shown in \cite{sestoft02demonstrating}. *)
 
 let rec nor t =
   match t with
@@ -128,9 +127,9 @@ let rec nor t =
 (*s Printing lambda terms *)
 
 (* Lambda symbols will be printed as slashes `\texttt{/}'.  Printing
-of terms can be performed by a simple recursive traversal.  However, since
-such printing is intended for humans to read, we want to print them
-somehow nicely, taking into account the following two rules:
+of terms can be performed by a simple recursive traversal.  However,
+since such printing is intended for humans to read, we want to print
+them somehow nicely, taking into account the following two rules:
 
    \begin{itemize}
    \item do not print parentheses when not necessary: application is
@@ -175,7 +174,6 @@ let rec string_of_term t =
     | Here l -> " < " ^ string_of_term l ^ " > "
   in
   sot Root t
-;;
 
 (*s Environment *)
 
@@ -206,7 +204,7 @@ let set_env n t =
 
 
 (* We start with the lexical analyzer.  It'll get a string and produce
-a stream of lexical [token]s. *)
+   a stream of lexical [token]s. *)
 
 type token =  CHAR of char | LPAR | RPAR | DOT | LAMBDA | STRING of string
               | END
@@ -222,18 +220,27 @@ type token =  CHAR of char | LPAR | RPAR | DOT | LAMBDA | STRING of string
 
 let soc = Printf.sprintf "%c"
 
-let implode l = let rec imp l acc = match l with | [] -> acc | h::t ->
-   imp t ((soc h)^acc) in imp l "" ;;
+let implode l =
+  let rec imp l acc = match l with
+    | [] -> acc
+    | h::t -> imp t ((soc h)^acc) in imp l "" ;;
 
 (* [get_name] reads characters from the character stream and
    cons-accumulates them until a non letter character is found.  It
    returns the string of the accumulated characters in the initial
    order by calling [implode].  *)
 
-let get_name s = let rec loop acc = let n = Stream.peek s in if n =
-   None then acc else let c = match n with Some c -> c in match c with
-   | '_' | '/' | '(' | ')' | '.' | ' ' -> acc | _ -> Stream.next s;
-   loop (c::acc) in implode (loop []) ;;
+let get_name s =
+  let rec loop acc =
+    let n = Stream.peek s in
+    if n = None then acc
+    else let c = match n with Some c -> c in
+         match c with
+         | '_' | '/' | '(' | ')' | '.' | ' ' -> acc
+         | _ -> Stream.next s;
+                loop (c::acc)
+  in
+  implode (loop []) ;;
 
 (* The lexer function takes a string and returns a token stream.  It
    first turns the string into a character stream, then consumes them
@@ -258,32 +265,44 @@ let lexer s = let s = Stream.of_string s in let rec next _ = let n =
 
 \bigskip
 
-\begin{tabular}{lll} full & \fl & term [END] \\ term & \fl & elt elts
-   $\vert$ lamb \\ elts & \fl & elt elts $\vert$ $\varepsilon$ \\ elt
-   & \fl & [(CHAR c)] $\vert$ [LPAR] term [RPAR] $\vert$ [(STRING s)]
-   \\ lamb & \fl & [LAMBDA] [(CHAR c)] lamb2 \\ lamb2 & \fl & [DOT]
-   term $\vert$ [(CHAR c)] lamb2 \end{tabular} \bigskip
+\begin{tabular}{lll}
+full & \fl & term [END] \\
+term & \fl & elt elts $\vert$ lamb \\
+elts & \fl & elt elts $\vert$ $\varepsilon$ \\
+elt  & \fl & [(CHAR c)] $\vert$ [LPAR] term [RPAR] $\vert$ [(STRING s)] \\
+lamb  & \fl & [LAMBDA] [(CHAR c)] lamb2 \\
+lamb2 & \fl & [DOT] term $\vert$ [(CHAR c)] lamb2
+\end{tabular}
 
-full is to ensure we parse the term from the full entry and not just a
-   prefix thereof. Each non atomic element (ie not a single char
-   variable or underscore-started name) must be enclosed in
-   parenthesis, except for a top-level lambda.  We want application to
-   be left associative.  The lamb2 rule allows compact notation for a
-   sequence of lambdas, so that eg \texttt{/fnx.x} will be parsed this
-   way:
+\bigskip
 
-\medskip term \fl{} lamb \fl{} \texttt{/f} lamb2 \fl{} \texttt{/fn}
-   lamb2 \fl{} \texttt{/fnx} lamb2 \\ \indent \fl{} \texttt{/fnx.}term
-   \fl{} \texttt{/fnx.}elt elts \fl{} \texttt{/fnx.x} elts \fl{}
-   \texttt{/fnx.x} \(\varepsilon\) \medskip *)
+\noindent full is to ensure we parse the term from the full entry and
+not just a prefix thereof. Each non atomic element (ie not a single
+char variable or underscore-started name) must be enclosed in
+parenthesis, except for a top-level lambda.  We want application to be
+left associative.  The lamb2 rule allows compact notation for a
+sequence of lambdas, so that eg \texttt{/fnx.x} will be parsed this
+way:
 
+\medskip
+
+term \fl{} lamb \fl{}
+\texttt{/f} lamb2 \fl{}
+\texttt{/fn} lamb2 \fl{}
+\texttt{/fnx} lamb2 \\
+\indent\fl{} \texttt{/fnx.}term \fl{}
+\texttt{/fnx.}elt elts \fl{}
+\texttt{/fnx.x} elts \fl{}
+\texttt{/fnx.x} \(\varepsilon\)
+
+\medskip *)
 
 (* We build our top-down parser using Caml streams, so we'll need
    camlp4 to use stream syntax.  This is taken care of in the
    Makefile; in an interactive session we could use: *)
 
 (* \begin{alltt}
-  #topfind;;
+  #use "topfind";;
   #camlp4o;;
 \end{alltt} *)
 
@@ -336,8 +355,8 @@ let term_of_string s = full (lexer s)
 
 \end{itemize}
 
-A context is a lambda term with a single [Hole] (a placeholder for the
-   term whose context it is).  A subterm in context is a term
+   A context is a lambda term with a single [Hole] (a placeholder for
+   the term whose context it is).  A subterm in context is a term
    appearing under a [Here] node in its context term.  See code of
    [string_of_term] above to see the string representation.
 
@@ -365,7 +384,7 @@ let put_in_hole c e =
    will accumulate a list of context steps, and build the
    corresponding context only when we need it.
 
-[buildc] builds the context from a list of context steps.  This is
+   [buildc] builds the context from a list of context steps.  This is
    done by putting the last step in the hole of previous one, putting
    the obtained term in hole of previous context step etc.  *)
 
@@ -388,7 +407,7 @@ let put_in_context c e =
   | _ -> Here e
 
 (* This one just puts [e] at its place in [c], without adding a [Here]
-   node. %TODO peut être traité à l'impression *)
+   node. *)
 
 let plug_in_context c e =
   match c with
@@ -502,7 +521,7 @@ add_env "false" "/xy.y";
 add_env "iszero" "/n.n(/x._false)(_true)";
 add_env "Y" "/g.(/x.g(xx))(/x.g(xx))";
 
-(* We have all we need to define the factorial function. *)
+(* We now have all we need to define the factorial function. *)
 
 add_env "ofact" "/fn.(_iszero n)(_succ _zero)(_mult n(f(_pred n)))";
 add_env "fact" "_ofact(_Y _ofact)";;
@@ -513,11 +532,12 @@ add_env "Z" "/f.(/x. f(/y.xxy)) (/x. f(/y.xxy))" ;; i*)
 
 (*s Using it *)
 
-(* We're mostly done.  We now need a simple shell to play with lambda
+(* We're mostly done.  Let's create a simple shell to play with lambda
    terms.  Here's first the definition of a few commands to alter the
    environment and select the evaluation function: *)
 
-let cont = ref true let eval = ref trace
+let cont = ref true
+let eval = ref trace
 
 let command (cmd::args) =
   match cmd,args with
@@ -528,7 +548,7 @@ let command (cmd::args) =
   | ":step",[] -> eval := step
   | ":nnor",[] -> eval := nnor
   | ":show",l -> print_endline (string_of_term (term_of_string (String.concat " " l)))
-  | __ -> print_endline "unknown command"
+  | _ -> print_endline "unknown command or bad args"
 
 (* And finally a simple interactive loop that reads a line, executes
    it if it's a command and otherwise evaluates it as a lambda term
@@ -611,8 +631,6 @@ Good, fact 3 is indeed 6!
 *)
 
 (*
-\bibliography{biblio2}
 \bibliographystyle{plain}
 \end{document}
 *)
-
