@@ -247,8 +247,8 @@ let get_name s =
    producing tokens.  When an underscore character is found, all
    following letters are accumulated by [get_name] to form a [STRING]
    token.  Blanks are simply skipped.  All other characters directly
-   map to a token.  The [END] token is produced when string end is
-   reached. *)
+   map to a token.  The [END] token is produced when the end of string
+   is reached. *)
 
 let lexer s = let s = Stream.of_string s in let rec next _ = let n =
    Stream.peek s in if n = None then Some END else match Stream.next s
@@ -418,7 +418,7 @@ let plug_in_context c e =
 (* Evaluation functions will take as argument a function [beta] that
    will perform the beta reduction on the given sub-term.  It will
    receive as first argument a list of context steps that it can use
-   as a possible side-effect. *)
+   in a possible side-effect. *)
 
 (* Here, [tsub] prints the term in context before reduction, performs
    reduction, prints the reduced term in context, prints the whole
@@ -566,14 +566,15 @@ let rec loop () =
           print_endline r
       end;
     if !cont then loop()
-  with _ -> print_endline "Syntax error"; loop() ;;
+  with End_of_file -> print_newline () (* exit *)
+      | _ -> print_endline "Syntax error"; loop() ;;
 
 loop()
 
 (* Let's try a few examples (default evaluation function is [trace]):
 
 \begin{alltt}
-/> _succ /nfx.f(nfx)
+/> _succ /fx.f(fx)
 Syntax error
 /> _succ (/fx.f(fx))
 = /fx.f((/fx.f(fx))fx)
@@ -631,6 +632,6 @@ Good, fact 3 is indeed 6!
 *)
 
 (*
-\bibliographystyle{plain}
+\input{lambda.bbl}
 \end{document}
 *)
