@@ -1,3 +1,5 @@
+NOTE: this repo is no more updated, it now lives on gitlab <https://gitlab.com/deleuzec/lambda.ml>
+
 # lambda.ml
 
 ## A lambda-calculus evaluator in OCaml
